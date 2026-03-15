@@ -181,13 +181,12 @@ pub const TabPool = struct {
             std.fmt.bufPrintZ(&label_buf, "Tab {d}", .{id + 1}) catch return error.FmtError;
 
         const tab_button = c.gtk_button_new_with_label(label_text.ptr);
-        c.gtk_button_set_relief(ch.GTK_BUTTON(tab_button), c.GTK_RELIEF_NONE);
+        c.gtk_widget_set_name(tab_button, id_str.ptr);
         c.gtk_box_pack_start(ch.GTK_BOX(tab_box), tab_button, 1, 1, 0);
 
-        // Close button
-        const close_btn = c.gtk_button_new_with_label("\xC3\x97"); // ×
-        c.gtk_button_set_relief(ch.GTK_BUTTON(close_btn), c.GTK_RELIEF_NONE);
-        c.gtk_widget_set_name(close_btn, id_str.ptr); // same id for lookup
+        // Close button ×
+        const close_btn = c.gtk_button_new_with_label("\xc3\x97"); // ×
+        c.gtk_widget_set_name(close_btn, id_str.ptr);
         c.gtk_box_pack_start(ch.GTK_BOX(tab_box), close_btn, 0, 0, 0);
 
         c.gtk_box_pack_start(ch.GTK_BOX(self.tab_bar), tab_box, 0, 0, 0);
@@ -338,14 +337,9 @@ pub const TabPool = struct {
     }
 
     fn findTabById(pool: *TabPool, widget: *c.GtkWidget) ?usize {
-        // Get the tab_box parent's name (which stores the tab id)
-        const parent = c.gtk_widget_get_parent(widget);
-        const name_src = if (parent != null)
-            c.gtk_widget_get_name(parent.?)
-        else
-            c.gtk_widget_get_name(widget);
-        if (name_src == null) return null;
-        const id = std.fmt.parseInt(u32, std.mem.span(name_src.?), 10) catch return null;
+        const name_ptr = c.gtk_widget_get_name(widget);
+        if (name_ptr == null) return null;
+        const id = std.fmt.parseInt(u32, std.mem.span(name_ptr.?), 10) catch return null;
 
         for (pool.tabs.items, 0..) |tab, i| {
             if (tab.id == id) return i;
