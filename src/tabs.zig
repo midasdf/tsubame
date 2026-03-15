@@ -254,6 +254,57 @@ pub const TabPool = struct {
         return null;
     }
 
+    pub fn saveSession(self: *TabPool, db: *@import("storage.zig").Database) void {
+        db.exec("DELETE FROM sessions") catch return;
+
+        for (self.tabs.items, 0..) |tab, i| {
+            const stmt = db.prepare(
+                "INSERT INTO sessions (tab_id, url, title, scroll_x, scroll_y, position, is_current) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ) catch continue;
+            defer _ = c.sqlite3_finalize(stmt);
+
+            _ = c.sqlite3_bind_int(stmt, 1, @intCast(tab.id));
+            if (tab.url) |u| {
+                _ = c.sqlite3_bind_text(stmt, 2, u.ptr, -1, null);
+            } else {
+                _ = c.sqlite3_bind_text(stmt, 2, "about:blank", -1, null);
+            }
+            if (tab.title) |t| {
+                _ = c.sqlite3_bind_text(stmt, 3, t.ptr, -1, null);
+            } else {
+                _ = c.sqlite3_bind_null(stmt, 3);
+            }
+            _ = c.sqlite3_bind_double(stmt, 4, tab.scroll_x);
+            _ = c.sqlite3_bind_double(stmt, 5, tab.scroll_y);
+            _ = c.sqlite3_bind_int(stmt, 6, @intCast(i));
+            _ = c.sqlite3_bind_int(stmt, 7, if (self.current_index == i) @as(c_int, 1) else @as(c_int, 0));
+            _ = c.sqlite3_step(stmt);
+        }
+    }
+
+    pub fn restoreSession(self: *TabPool, db: *@import("storage.zig").Database) !bool {
+        const stmt = db.prepare(
+            "SELECT url, is_current FROM sessions ORDER BY position ASC",
+        ) catch return false;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        var count: usize = 0;
+        var current_idx: ?usize = null;
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const url = c.sqlite3_column_text(stmt, 0) orelse continue;
+            const is_current = c.sqlite3_column_int(stmt, 1);
+
+            const idx = try self.newTab(url);
+            if (is_current != 0) current_idx = idx;
+            count += 1;
+        }
+
+        if (current_idx) |idx| self.switchTo(idx);
+
+        return count > 0;
+    }
+
     fn onTabButtonClicked(button: *c.GtkButton, user_data: ?*anyopaque) callconv(.c) void {
         const pool: *TabPool = @ptrCast(@alignCast(user_data orelse return));
         const name = c.gtk_widget_get_name(ch.GTK_WIDGET(button));

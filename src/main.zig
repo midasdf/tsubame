@@ -8,6 +8,7 @@ const tabs_mod = @import("tabs.zig");
 const history = @import("history.zig");
 const bookmarks = @import("bookmarks.zig");
 const search = @import("search.zig");
+const downloads = @import("downloads.zig");
 
 const DEFAULT_URL = "https://duckduckgo.com";
 var g_allocator: std.mem.Allocator = undefined;
@@ -289,6 +290,7 @@ fn onKeyPress(_: *c.GtkWidget, event_ptr: ?*anyopaque, _: ?*anyopaque) callconv(
 }
 
 fn onDestroy(_: *c.GtkWidget, _: ?*anyopaque) callconv(.c) void {
+    g_pool.saveSession(g_db);
     c.gtk_main_quit();
 }
 
@@ -342,11 +344,17 @@ pub fn main() !void {
     pool.on_new_webview = &connectWebViewSignals;
     pool.on_tab_switch_cb = &onTabSwitch;
 
-    // Create initial tab
-    _ = pool.newTab(DEFAULT_URL) catch {
-        std.debug.print("Error: could not create initial tab\n", .{});
-        return;
-    };
+    // Setup downloads
+    downloads.setup(&db, g_ui.download_bar, g_ui.download_label);
+
+    // Try to restore previous session
+    const restored = pool.restoreSession(&db) catch false;
+    if (!restored) {
+        _ = pool.newTab(DEFAULT_URL) catch {
+            std.debug.print("Error: could not create initial tab\n", .{});
+            return;
+        };
+    }
 
     // Connect toolbar signals
     ch.connectSignalNoData(g_ui.back_btn, "clicked", &onBackClicked);
