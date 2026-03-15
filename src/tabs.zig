@@ -15,6 +15,7 @@ pub const TabState = struct {
     is_private: bool,
     webview: ?*c.GtkWidget,
     last_accessed: i64,
+    tab_box: ?*c.GtkWidget,
     tab_button: ?*c.GtkWidget,
 
     pub fn deinit(self: *TabState, allocator: std.mem.Allocator) void {
@@ -104,8 +105,8 @@ pub const TabPool = struct {
         tab.webview = null;
         tab.is_active = false;
 
-        if (tab.tab_button) |btn| {
-            c.gtk_widget_set_sensitive(btn, 0);
+        if (tab.tab_box) |box| {
+            c.gtk_widget_set_sensitive(box, 0);
         }
     }
 
@@ -132,8 +133,8 @@ pub const TabPool = struct {
             browser.loadUri(webview, url.ptr);
         }
 
-        if (tab.tab_button) |btn| {
-            c.gtk_widget_set_sensitive(btn, 1);
+        if (tab.tab_box) |box| {
+            c.gtk_widget_set_sensitive(box, 1);
         }
 
         if (self.on_new_webview) |cb| cb(webview);
@@ -164,26 +165,38 @@ pub const TabPool = struct {
         c.gtk_stack_add_named(ch.GTK_STACK(self.web_stack), webview, name.ptr);
         c.gtk_widget_show(webview);
 
-        // Create tab button with tab id as widget name for lookup
+        // Create tab widget: [label_button] [close_button] in a box
         var id_buf: [32]u8 = undefined;
         const id_str = std.fmt.bufPrintZ(&id_buf, "{d}", .{id}) catch return error.FmtError;
 
+        // Container box for the tab
+        const tab_box = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 0);
+        c.gtk_widget_set_name(tab_box, id_str.ptr);
+
+        // Label button (clickable area to switch tab)
         var label_buf: [64]u8 = undefined;
-        const label = std.fmt.bufPrintZ(&label_buf, "Tab {d}", .{id + 1}) catch return error.FmtError;
-        const tab_button = c.gtk_button_new_with_label(label.ptr);
-        c.gtk_widget_set_name(tab_button, id_str.ptr);
-        c.gtk_box_pack_start(ch.GTK_BOX(self.tab_bar), tab_button, 0, 0, 0);
-        c.gtk_widget_show(tab_button);
+        const label_text = if (is_private)
+            std.fmt.bufPrintZ(&label_buf, "\xF0\x9F\x94\x92 Tab {d}", .{id + 1}) catch return error.FmtError
+        else
+            std.fmt.bufPrintZ(&label_buf, "Tab {d}", .{id + 1}) catch return error.FmtError;
+
+        const tab_button = c.gtk_button_new_with_label(label_text.ptr);
+        c.gtk_button_set_relief(ch.GTK_BUTTON(tab_button), c.GTK_RELIEF_NONE);
+        c.gtk_box_pack_start(ch.GTK_BOX(tab_box), tab_button, 1, 1, 0);
+
+        // Close button
+        const close_btn = c.gtk_button_new_with_label("\xC3\x97"); // ×
+        c.gtk_button_set_relief(ch.GTK_BUTTON(close_btn), c.GTK_RELIEF_NONE);
+        c.gtk_widget_set_name(close_btn, id_str.ptr); // same id for lookup
+        c.gtk_box_pack_start(ch.GTK_BOX(tab_box), close_btn, 0, 0, 0);
+
+        c.gtk_box_pack_start(ch.GTK_BOX(self.tab_bar), tab_box, 0, 0, 0);
+        c.gtk_widget_show_all(tab_box);
 
         ch.connectSignal(tab_button, "clicked", &onTabButtonClicked, self);
+        ch.connectSignal(close_btn, "clicked", &onTabCloseClicked, self);
 
         const now = std.time.timestamp();
-
-        var label_buf2: [64]u8 = undefined;
-        if (is_private) {
-            const priv_label = std.fmt.bufPrintZ(&label_buf2, "\xF0\x9F\x94\x92 Tab {d}", .{id + 1}) catch return error.FmtError;
-            c.gtk_button_set_label(ch.GTK_BUTTON(tab_button), priv_label.ptr);
-        }
 
         const tab = TabState{
             .id = id,
@@ -195,6 +208,7 @@ pub const TabPool = struct {
             .is_private = is_private,
             .webview = webview,
             .last_accessed = now,
+            .tab_box = tab_box,
             .tab_button = tab_button,
         };
 
@@ -239,8 +253,8 @@ pub const TabPool = struct {
             c.gtk_container_remove(ch.GTK_CONTAINER(self.web_stack), tab.webview.?);
         }
 
-        if (tab.tab_button) |btn| {
-            c.gtk_container_remove(ch.GTK_CONTAINER(self.tab_bar), btn);
+        if (tab.tab_box) |box| {
+            c.gtk_container_remove(ch.GTK_CONTAINER(self.tab_bar), box);
         }
 
         tab.deinit(self.allocator);
@@ -323,17 +337,33 @@ pub const TabPool = struct {
         return count > 0;
     }
 
-    fn onTabButtonClicked(button: *c.GtkButton, user_data: ?*anyopaque) callconv(.c) void {
-        const pool: *TabPool = @ptrCast(@alignCast(user_data orelse return));
-        const name = c.gtk_widget_get_name(ch.GTK_WIDGET(button));
-        if (name == null) return;
-        const id = std.fmt.parseInt(u32, std.mem.span(name.?), 10) catch return;
+    fn findTabById(pool: *TabPool, widget: *c.GtkWidget) ?usize {
+        // Get the tab_box parent's name (which stores the tab id)
+        const parent = c.gtk_widget_get_parent(widget);
+        const name_src = if (parent != null)
+            c.gtk_widget_get_name(parent.?)
+        else
+            c.gtk_widget_get_name(widget);
+        if (name_src == null) return null;
+        const id = std.fmt.parseInt(u32, std.mem.span(name_src.?), 10) catch return null;
 
         for (pool.tabs.items, 0..) |tab, i| {
-            if (tab.id == id) {
-                pool.switchTo(i);
-                break;
-            }
+            if (tab.id == id) return i;
+        }
+        return null;
+    }
+
+    fn onTabButtonClicked(button: *c.GtkButton, user_data: ?*anyopaque) callconv(.c) void {
+        const pool: *TabPool = @ptrCast(@alignCast(user_data orelse return));
+        if (findTabById(pool, ch.GTK_WIDGET(button))) |i| {
+            pool.switchTo(i);
+        }
+    }
+
+    fn onTabCloseClicked(button: *c.GtkButton, user_data: ?*anyopaque) callconv(.c) void {
+        const pool: *TabPool = @ptrCast(@alignCast(user_data orelse return));
+        if (findTabById(pool, ch.GTK_WIDGET(button))) |i| {
+            pool.closeTab(i);
         }
     }
 };

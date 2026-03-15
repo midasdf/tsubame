@@ -76,26 +76,38 @@ const dark_css =
     \\    border-bottom: 1px solid #313244;
     \\}
     \\
-    \\#tab-bar button {
+    \\#tab-bar box {
     \\    background-color: #1e1e2e;
-    \\    color: #a6adc8;
     \\    border: 1px solid #313244;
     \\    border-radius: 6px 6px 0 0;
-    \\    padding: 3px 10px;
     \\    margin-right: 2px;
+    \\}
+    \\
+    \\#tab-bar box:disabled {
+    \\    background-color: #11111b;
+    \\    border-color: #181825;
+    \\}
+    \\
+    \\#tab-bar box button {
+    \\    background: transparent;
+    \\    color: #a6adc8;
+    \\    border: none;
+    \\    padding: 3px 6px;
     \\    min-width: 0;
     \\    min-height: 0;
     \\}
     \\
-    \\#tab-bar button:hover {
-    \\    background-color: #313244;
+    \\#tab-bar box button:hover {
     \\    color: #cdd6f4;
     \\}
     \\
-    \\#tab-bar button:disabled {
-    \\    background-color: #11111b;
+    \\#tab-bar box button:last-child {
     \\    color: #585b70;
-    \\    border-color: #181825;
+    \\    padding: 3px 4px;
+    \\}
+    \\
+    \\#tab-bar box button:last-child:hover {
+    \\    color: #f38ba8;
     \\}
     \\
     \\/* New tab button */
