@@ -24,8 +24,9 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // Add system library search paths since we're using a non-native target
+    // Add system library/include paths since non-native target skips them
     exe.addLibraryPath(.{ .cwd_relative = "/usr/lib" });
+    exe.root_module.addSystemIncludePath(.{ .cwd_relative = "/usr/include" });
 
     exe.linkSystemLibrary("gtk+-3.0");
     exe.linkSystemLibrary("webkit2gtk-4.1");
