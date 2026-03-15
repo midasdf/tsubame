@@ -5,8 +5,12 @@ const storage = @import("storage.zig");
 const browser = @import("browser.zig");
 const ui_mod = @import("ui.zig");
 const tabs_mod = @import("tabs.zig");
+const history = @import("history.zig");
+const bookmarks = @import("bookmarks.zig");
+const search = @import("search.zig");
 
 const DEFAULT_URL = "https://duckduckgo.com";
+var g_allocator: std.mem.Allocator = undefined;
 
 // Global state (needed for GTK C callbacks)
 var g_pool: *tabs_mod.TabPool = undefined;
@@ -20,7 +24,18 @@ fn onLoadChanged(_: *c.WebKitWebView, event: c_uint, _: ?*anyopaque) callconv(.c
                 if (browser.getUri(wv)) |uri| {
                     tab.updateUrl(g_pool.allocator, uri);
                     c.gtk_entry_set_text(ch.GTK_ENTRY(g_ui.url_entry), uri);
+                    // Update bookmark indicator
+                    const is_bm = bookmarks.isBookmarked(g_db, uri);
+                    c.gtk_button_set_label(ch.GTK_BUTTON(g_ui.bookmark_btn), if (is_bm) "\xE2\x98\x85" else "\xE2\x98\x86");
                 }
+            }
+        }
+    }
+    if (event == c.WEBKIT_LOAD_FINISHED) {
+        if (g_pool.currentTab()) |tab| {
+            if (tab.url) |url| {
+                const title_ptr: ?[*:0]const u8 = if (tab.title) |t| t.ptr else null;
+                history.recordVisit(g_db, url.ptr, title_ptr);
             }
         }
     }
@@ -85,6 +100,63 @@ fn onReloadClicked(_: *c.GtkButton, _: ?*anyopaque) callconv(.c) void {
 
 fn onNewTabClicked(_: *c.GtkButton, _: ?*anyopaque) callconv(.c) void {
     _ = g_pool.newTab(DEFAULT_URL) catch {};
+}
+
+fn onBookmarkClicked(_: *c.GtkButton, _: ?*anyopaque) callconv(.c) void {
+    toggleCurrentBookmark();
+}
+
+fn toggleCurrentBookmark() void {
+    if (g_pool.currentTab()) |tab| {
+        if (tab.url) |url| {
+            const title_ptr: ?[*:0]const u8 = if (tab.title) |t| t.ptr else null;
+            const added = bookmarks.toggleBookmark(g_db, url.ptr, title_ptr);
+            c.gtk_button_set_label(ch.GTK_BUTTON(g_ui.bookmark_btn), if (added) "\xE2\x98\x85" else "\xE2\x98\x86");
+        }
+    }
+}
+
+fn onFindEntryActivate(_: *c.GtkEntry, _: ?*anyopaque) callconv(.c) void {
+    const text = c.gtk_entry_get_text(ch.GTK_ENTRY(g_ui.find_entry));
+    if (g_pool.currentWebView()) |wv| {
+        search.findInPage(wv, text.?, true);
+    }
+}
+
+fn onFindNext(_: *c.GtkButton, _: ?*anyopaque) callconv(.c) void {
+    if (g_pool.currentWebView()) |wv| search.findNext(wv);
+}
+
+fn onFindPrev(_: *c.GtkButton, _: ?*anyopaque) callconv(.c) void {
+    if (g_pool.currentWebView()) |wv| search.findPrev(wv);
+}
+
+fn onFindClose(_: *c.GtkButton, _: ?*anyopaque) callconv(.c) void {
+    c.gtk_widget_hide(g_ui.find_bar);
+    if (g_pool.currentWebView()) |wv| search.clearFind(wv);
+}
+
+fn onCustomUri(request: [*c]c.WebKitURISchemeRequest, _: ?*anyopaque) callconv(.c) void {
+    const uri = c.webkit_uri_scheme_request_get_uri(request);
+    if (uri == null) return;
+    const span = std.mem.span(uri.?);
+
+    var html: ?[]const u8 = null;
+
+    if (std.mem.eql(u8, span, "tsubame://history")) {
+        html = history.generateHistoryPage(g_db, g_allocator);
+    } else if (std.mem.eql(u8, span, "tsubame://bookmarks")) {
+        html = bookmarks.generateBookmarksPage(g_db, g_allocator);
+    }
+
+    if (html) |h| {
+        defer g_allocator.free(h);
+        const bytes = c.g_bytes_new(h.ptr, h.len);
+        const stream = c.g_memory_input_stream_new_from_bytes(bytes);
+        c.webkit_uri_scheme_request_finish(request, stream, @intCast(h.len), "text/html");
+        c.g_object_unref(stream);
+        c.g_bytes_unref(bytes);
+    }
 }
 
 fn connectWebViewSignals(webview: *c.GtkWidget) void {
@@ -166,6 +238,14 @@ fn onKeyPress(_: *c.GtkWidget, event_ptr: ?*anyopaque, _: ?*anyopaque) callconv(
                 c.gtk_main_quit();
                 return 1;
             },
+            c.GDK_KEY_d, c.GDK_KEY_D => {
+                toggleCurrentBookmark();
+                return 1;
+            },
+            c.GDK_KEY_h, c.GDK_KEY_H => {
+                if (g_pool.currentWebView()) |wv| browser.loadUri(wv, "tsubame://history");
+                return 1;
+            },
             c.GDK_KEY_1...c.GDK_KEY_9 => {
                 const n = event.keyval - c.GDK_KEY_1;
                 if (n < g_pool.tabs.items.len) g_pool.switchTo(n);
@@ -195,7 +275,10 @@ fn onKeyPress(_: *c.GtkWidget, event_ptr: ?*anyopaque, _: ?*anyopaque) callconv(
             return 1;
         },
         c.GDK_KEY_Escape => {
-            if (g_pool.currentWebView()) |wv| browser.stopLoading(wv);
+            if (g_pool.currentWebView()) |wv| {
+                browser.stopLoading(wv);
+                search.clearFind(wv);
+            }
             c.gtk_widget_hide(g_ui.find_bar);
             return 1;
         },
@@ -231,8 +314,14 @@ pub fn main() !void {
     defer db.close();
     g_db = &db;
 
+    g_allocator = allocator;
+
     _ = c.gtk_init(null, null);
     browser.setupCookies();
+
+    // Register custom URI scheme
+    const ctx = c.webkit_web_context_get_default();
+    c.webkit_web_context_register_uri_scheme(ctx, "tsubame", &onCustomUri, null, null);
 
     // Build UI
     g_ui = ui_mod.buildUi();
@@ -266,6 +355,11 @@ pub fn main() !void {
     ch.connectSignalNoData(g_ui.new_tab_btn, "clicked", &onNewTabClicked);
     ch.connectSignalNoData(g_ui.url_entry, "activate", &onUrlEntryActivate);
     ch.connectSignalNoData(g_ui.window, "key-press-event", &onKeyPress);
+    ch.connectSignalNoData(g_ui.bookmark_btn, "clicked", &onBookmarkClicked);
+    ch.connectSignalNoData(g_ui.find_entry, "activate", &onFindEntryActivate);
+    ch.connectSignalNoData(g_ui.find_next_btn, "clicked", &onFindNext);
+    ch.connectSignalNoData(g_ui.find_prev_btn, "clicked", &onFindPrev);
+    ch.connectSignalNoData(g_ui.find_close_btn, "clicked", &onFindClose);
 
     c.gtk_widget_show_all(g_ui.window);
     c.gtk_main();
