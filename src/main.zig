@@ -2,6 +2,7 @@ const std = @import("std");
 const ch = @import("c_helpers.zig");
 const c = ch.c;
 const storage = @import("storage.zig");
+const browser = @import("browser.zig");
 
 const APP_NAME = "Tsubame";
 const DEFAULT_URL = "https://duckduckgo.com";
@@ -22,8 +23,10 @@ pub fn main() !void {
         return;
     };
     defer db.close();
+    _ = &db;
 
     _ = c.gtk_init(null, null);
+    browser.setupCookies();
 
     // Create window
     const window = c.gtk_window_new(c.GTK_WINDOW_TOPLEVEL);
@@ -31,14 +34,10 @@ pub fn main() !void {
     c.gtk_window_set_default_size(ch.GTK_WINDOW(window), 1024, 768);
     ch.connectSignalNoData(window, "destroy", &c.gtk_main_quit);
 
-    // Create WebView
-    const webview = c.webkit_web_view_new();
-
-    // Put WebView in window
+    // Create WebView via browser module
+    const webview = browser.createWebView();
     c.gtk_container_add(ch.GTK_CONTAINER(window), webview);
-
-    // Load default URL
-    c.webkit_web_view_load_uri(ch.WEBKIT_WEB_VIEW(webview), DEFAULT_URL);
+    browser.loadUri(webview, DEFAULT_URL);
 
     // Show and run
     c.gtk_widget_show_all(window);
