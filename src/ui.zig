@@ -21,7 +21,171 @@ pub const UiState = struct {
     new_tab_btn: *c.GtkWidget,
 };
 
+const dark_css =
+    \\/* Tsubame dark theme */
+    \\
+    \\/* Force dark background on all chrome */
+    \\window, .background {
+    \\    background-color: #1e1e2e;
+    \\    color: #cdd6f4;
+    \\}
+    \\
+    \\/* Toolbar area */
+    \\#toolbar {
+    \\    background-color: #181825;
+    \\    padding: 2px 4px;
+    \\    border-bottom: 1px solid #313244;
+    \\}
+    \\
+    \\#toolbar button {
+    \\    background: transparent;
+    \\    border: none;
+    \\    color: #cdd6f4;
+    \\    padding: 4px 8px;
+    \\    min-width: 0;
+    \\    min-height: 0;
+    \\}
+    \\
+    \\#toolbar button:hover {
+    \\    background-color: #313244;
+    \\    border-radius: 4px;
+    \\}
+    \\
+    \\/* URL entry */
+    \\#url-entry {
+    \\    background-color: #313244;
+    \\    color: #cdd6f4;
+    \\    border: 1px solid #45475a;
+    \\    border-radius: 6px;
+    \\    padding: 4px 8px;
+    \\    caret-color: #89b4fa;
+    \\}
+    \\
+    \\#url-entry:focus {
+    \\    border-color: #89b4fa;
+    \\}
+    \\
+    \\/* Tab bar */
+    \\#tab-bar {
+    \\    background-color: #11111b;
+    \\    padding: 2px 4px;
+    \\    border-bottom: 1px solid #313244;
+    \\}
+    \\
+    \\#tab-bar button {
+    \\    background-color: #1e1e2e;
+    \\    color: #a6adc8;
+    \\    border: 1px solid #313244;
+    \\    border-radius: 6px 6px 0 0;
+    \\    padding: 3px 10px;
+    \\    margin-right: 2px;
+    \\    min-width: 0;
+    \\    min-height: 0;
+    \\}
+    \\
+    \\#tab-bar button:hover {
+    \\    background-color: #313244;
+    \\    color: #cdd6f4;
+    \\}
+    \\
+    \\#tab-bar button:disabled {
+    \\    background-color: #11111b;
+    \\    color: #585b70;
+    \\    border-color: #181825;
+    \\}
+    \\
+    \\/* New tab button */
+    \\#new-tab-btn {
+    \\    background: transparent;
+    \\    color: #585b70;
+    \\    border: 1px dashed #45475a;
+    \\    border-radius: 6px 6px 0 0;
+    \\    padding: 3px 8px;
+    \\}
+    \\
+    \\#new-tab-btn:hover {
+    \\    color: #89b4fa;
+    \\    border-color: #89b4fa;
+    \\}
+    \\
+    \\/* Bookmark button */
+    \\#bookmark-btn {
+    \\    color: #f9e2af;
+    \\}
+    \\
+    \\/* Find bar */
+    \\#find-bar {
+    \\    background-color: #181825;
+    \\    padding: 4px 8px;
+    \\    border-top: 1px solid #313244;
+    \\}
+    \\
+    \\#find-bar entry {
+    \\    background-color: #313244;
+    \\    color: #cdd6f4;
+    \\    border: 1px solid #45475a;
+    \\    border-radius: 4px;
+    \\    padding: 2px 6px;
+    \\}
+    \\
+    \\#find-bar button {
+    \\    background: transparent;
+    \\    color: #cdd6f4;
+    \\    border: none;
+    \\    padding: 2px 6px;
+    \\    min-width: 0;
+    \\    min-height: 0;
+    \\}
+    \\
+    \\#find-bar button:hover {
+    \\    background-color: #313244;
+    \\    border-radius: 4px;
+    \\}
+    \\
+    \\#find-bar label {
+    \\    color: #a6adc8;
+    \\}
+    \\
+    \\/* Download bar */
+    \\#download-bar {
+    \\    background-color: #1e1e2e;
+    \\    padding: 4px 8px;
+    \\    border-top: 1px solid #313244;
+    \\}
+    \\
+    \\#download-bar label {
+    \\    color: #a6e3a1;
+    \\}
+;
+
+fn applyDarkTheme() void {
+    // Enable GTK dark theme preference
+    const gtk_settings = c.gtk_settings_get_default();
+    _ = c.g_object_set(
+        @as(*c.GObject, @ptrCast(@alignCast(gtk_settings))),
+        "gtk-application-prefer-dark-theme",
+        @as(c_int, 1),
+        @as(?*anyopaque, null),
+    );
+
+    // Load custom CSS
+    const provider = c.gtk_css_provider_new();
+    _ = c.gtk_css_provider_load_from_data(
+        provider,
+        dark_css,
+        -1,
+        null,
+    );
+    c.gtk_style_context_add_provider_for_screen(
+        c.gdk_screen_get_default(),
+        @ptrCast(@alignCast(provider)),
+        c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+}
+
 pub fn buildUi() UiState {
+    applyDarkTheme();
+
     // Window
     const window = c.gtk_window_new(c.GTK_WINDOW_TOPLEVEL);
     c.gtk_window_set_title(ch.GTK_WINDOW(window), "Tsubame");
@@ -33,6 +197,7 @@ pub fn buildUi() UiState {
 
     // --- Toolbar ---
     const toolbar = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 2);
+    c.gtk_widget_set_name(toolbar, "toolbar");
     c.gtk_box_pack_start(ch.GTK_BOX(vbox), toolbar, 0, 0, 0);
 
     const back_btn = c.gtk_button_new_with_label("\xE2\x97\x80"); // ◀
@@ -44,16 +209,20 @@ pub fn buildUi() UiState {
     c.gtk_box_pack_start(ch.GTK_BOX(toolbar), reload_btn, 0, 0, 0);
 
     const url_entry = c.gtk_entry_new();
+    c.gtk_widget_set_name(url_entry, "url-entry");
     c.gtk_box_pack_start(ch.GTK_BOX(toolbar), url_entry, 1, 1, 4);
 
     const bookmark_btn = c.gtk_button_new_with_label("\xE2\x98\x86"); // ☆
+    c.gtk_widget_set_name(bookmark_btn, "bookmark-btn");
     c.gtk_box_pack_start(ch.GTK_BOX(toolbar), bookmark_btn, 0, 0, 0);
 
     // --- Tab bar ---
     const tab_bar = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 1);
+    c.gtk_widget_set_name(tab_bar, "tab-bar");
     c.gtk_box_pack_start(ch.GTK_BOX(vbox), tab_bar, 0, 0, 0);
 
     const new_tab_btn = c.gtk_button_new_with_label("+");
+    c.gtk_widget_set_name(new_tab_btn, "new-tab-btn");
     c.gtk_box_pack_end(ch.GTK_BOX(tab_bar), new_tab_btn, 0, 0, 0);
 
     // --- Web content area (GtkStack) ---
@@ -63,6 +232,7 @@ pub fn buildUi() UiState {
 
     // --- Find bar (hidden by default) ---
     const find_bar = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 2);
+    c.gtk_widget_set_name(find_bar, "find-bar");
     c.gtk_box_pack_start(ch.GTK_BOX(vbox), find_bar, 0, 0, 0);
     c.gtk_widget_set_no_show_all(find_bar, 1);
 
@@ -80,6 +250,7 @@ pub fn buildUi() UiState {
 
     // --- Download bar (hidden by default) ---
     const download_bar = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 4);
+    c.gtk_widget_set_name(download_bar, "download-bar");
     c.gtk_box_pack_start(ch.GTK_BOX(vbox), download_bar, 0, 0, 0);
     c.gtk_widget_set_no_show_all(download_bar, 1);
 
