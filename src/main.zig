@@ -9,6 +9,9 @@ const history = @import("history.zig");
 const bookmarks = @import("bookmarks.zig");
 const search = @import("search.zig");
 const downloads = @import("downloads.zig");
+const config = @import("config.zig");
+const adblock = @import("adblock.zig");
+const userscript = @import("userscript.zig");
 
 const DEFAULT_URL = "https://duckduckgo.com";
 var g_allocator: std.mem.Allocator = undefined;
@@ -151,6 +154,8 @@ fn onCustomUri(request: [*c]c.WebKitURISchemeRequest, _: ?*anyopaque) callconv(.
 fn connectWebViewSignals(webview: *c.GtkWidget) void {
     ch.connectSignalNoData(webview, "load-changed", &onLoadChanged);
     ch.connectSignalNoData(webview, "notify::title", &onTitleChanged);
+    adblock.applyToWebView(webview);
+    userscript.applyToWebView(webview);
 }
 
 fn onTabSwitch(pool: *tabs_mod.TabPool, idx: usize) void {
@@ -183,7 +188,19 @@ fn onKeyPress(_: *c.GtkWidget, event_ptr: ?*anyopaque, _: ?*anyopaque) callconv(
     if (ctrl) {
         switch (event.keyval) {
             c.GDK_KEY_t, c.GDK_KEY_T => {
-                _ = g_pool.newTab(DEFAULT_URL) catch {};
+                if (shift) {
+                    // Ctrl+Shift+T could be used for reopen closed tab later
+                    _ = g_pool.newTab(DEFAULT_URL) catch {};
+                } else {
+                    _ = g_pool.newTab(DEFAULT_URL) catch {};
+                }
+                return 1;
+            },
+            c.GDK_KEY_n, c.GDK_KEY_N => {
+                if (shift) {
+                    // Ctrl+Shift+N = new private tab
+                    _ = g_pool.newPrivateTab(DEFAULT_URL) catch {};
+                }
                 return 1;
             },
             c.GDK_KEY_w, c.GDK_KEY_W => {
@@ -311,8 +328,13 @@ pub fn main() !void {
 
     g_allocator = allocator;
 
+    // Load config file (overrides DB defaults)
+    config.loadConfigFile(&db);
+
     _ = c.gtk_init(null, null);
     browser.setupCookies();
+    adblock.setup(&db);
+    userscript.loadScripts();
 
     // Register custom URI scheme
     const ctx = c.webkit_web_context_get_default();

@@ -3,6 +3,8 @@ const ch = @import("c_helpers.zig");
 const c = ch.c;
 const browser = @import("browser.zig");
 
+const private_mod = @import("private.zig");
+
 pub const TabState = struct {
     id: u32,
     url: ?[:0]u8,
@@ -10,6 +12,7 @@ pub const TabState = struct {
     scroll_x: f64,
     scroll_y: f64,
     is_active: bool,
+    is_private: bool,
     webview: ?*c.GtkWidget,
     last_accessed: i64,
     tab_button: ?*c.GtkWidget,
@@ -137,6 +140,14 @@ pub const TabPool = struct {
     }
 
     pub fn newTab(self: *TabPool, url: [*:0]const u8) !usize {
+        return self.newTabEx(url, false);
+    }
+
+    pub fn newPrivateTab(self: *TabPool, url: [*:0]const u8) !usize {
+        return self.newTabEx(url, true);
+    }
+
+    fn newTabEx(self: *TabPool, url: [*:0]const u8, is_private: bool) !usize {
         if (self.activeCount() >= self.max_active) {
             if (self.findLruActive()) |lru_idx| {
                 self.suspendTab(lru_idx);
@@ -146,7 +157,7 @@ pub const TabPool = struct {
         const id = self.next_id;
         self.next_id += 1;
 
-        const webview = browser.createWebView();
+        const webview = if (is_private) private_mod.createPrivateWebView() else browser.createWebView();
 
         var name_buf: [32]u8 = undefined;
         const name = std.fmt.bufPrintZ(&name_buf, "tab-{d}", .{id}) catch return error.FmtError;
@@ -168,6 +179,12 @@ pub const TabPool = struct {
 
         const now = std.time.timestamp();
 
+        var label_buf2: [64]u8 = undefined;
+        if (is_private) {
+            const priv_label = std.fmt.bufPrintZ(&label_buf2, "\xF0\x9F\x94\x92 Tab {d}", .{id + 1}) catch return error.FmtError;
+            c.gtk_button_set_label(ch.GTK_BUTTON(tab_button), priv_label.ptr);
+        }
+
         const tab = TabState{
             .id = id,
             .url = self.allocator.dupeZ(u8, std.mem.span(url)) catch null,
@@ -175,6 +192,7 @@ pub const TabPool = struct {
             .scroll_x = 0,
             .scroll_y = 0,
             .is_active = true,
+            .is_private = is_private,
             .webview = webview,
             .last_accessed = now,
             .tab_button = tab_button,
