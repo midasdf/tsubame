@@ -401,7 +401,7 @@ pub fn main() !void {
     config.loadConfigFile(&db);
 
     _ = c.gtk_init(null, null);
-    browser.setupCookies();
+    browser.setupContext(&db);
     adblock.setup(&db);
     userscript.loadScripts();
 
@@ -414,11 +414,12 @@ pub fn main() !void {
     ch.connectSignalNoData(g_ui.window, "delete-event", &onDeleteEvent);
     ch.connectSignalNoData(g_ui.window, "destroy", &onDestroy);
 
-    // Read max_active_tabs
-    var max_active: u32 = 3;
+    // Read max_active_tabs (default: 1 on low memory, 3 otherwise)
+    const default_max: u32 = if (browser.isLowMemory()) 1 else 3;
+    var max_active: u32 = default_max;
     if (db.getSetting("max_active_tabs")) |val| {
         const span = std.mem.span(val);
-        max_active = std.fmt.parseInt(u32, span, 10) catch 3;
+        max_active = std.fmt.parseInt(u32, span, 10) catch default_max;
     }
 
     // Init tab pool
