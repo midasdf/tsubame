@@ -49,19 +49,7 @@ fn onTitleChanged(_: *c.WebKitWebView, _: ?*c.GParamSpec, _: ?*anyopaque) callco
                 tab.updateTitle(g_pool.allocator, title);
                 c.gtk_window_set_title(ch.GTK_WINDOW(g_ui.window), title);
                 if (tab.tab_button) |btn| {
-                    // Truncate long titles for tab button
-                    const span = std.mem.span(title);
-                    if (span.len > 20) {
-                        var buf: [24]u8 = undefined;
-                        @memcpy(buf[0..20], span[0..20]);
-                        buf[20] = '.';
-                        buf[21] = '.';
-                        buf[22] = '.';
-                        buf[23] = 0;
-                        c.gtk_button_set_label(ch.GTK_BUTTON(btn), &buf);
-                    } else {
-                        c.gtk_button_set_label(ch.GTK_BUTTON(btn), title);
-                    }
+                    c.gtk_button_set_label(ch.GTK_BUTTON(btn), title);
                 }
             }
         }
@@ -236,6 +224,7 @@ fn onKeyPress(_: *c.GtkWidget, event_ptr: ?*anyopaque, _: ?*anyopaque) callconv(
                 return 1;
             },
             c.GDK_KEY_q, c.GDK_KEY_Q => {
+                g_pool.saveSession(g_db);
                 c.gtk_main_quit();
                 return 1;
             },
@@ -289,8 +278,12 @@ fn onKeyPress(_: *c.GtkWidget, event_ptr: ?*anyopaque, _: ?*anyopaque) callconv(
     return 0;
 }
 
-fn onDestroy(_: *c.GtkWidget, _: ?*anyopaque) callconv(.c) void {
+fn onDeleteEvent(_: *c.GtkWidget, _: ?*anyopaque, _: ?*anyopaque) callconv(.c) c_int {
     g_pool.saveSession(g_db);
+    return 0; // allow window to close
+}
+
+fn onDestroy(_: *c.GtkWidget, _: ?*anyopaque) callconv(.c) void {
     c.gtk_main_quit();
 }
 
@@ -327,6 +320,7 @@ pub fn main() !void {
 
     // Build UI
     g_ui = ui_mod.buildUi();
+    ch.connectSignalNoData(g_ui.window, "delete-event", &onDeleteEvent);
     ch.connectSignalNoData(g_ui.window, "destroy", &onDestroy);
 
     // Read max_active_tabs
@@ -369,6 +363,14 @@ pub fn main() !void {
     ch.connectSignalNoData(g_ui.find_prev_btn, "clicked", &onFindPrev);
     ch.connectSignalNoData(g_ui.find_close_btn, "clicked", &onFindClose);
 
+    // Auto-save session every 30 seconds
+    _ = c.g_timeout_add(30000, &autoSaveSession, null);
+
     c.gtk_widget_show_all(g_ui.window);
     c.gtk_main();
+}
+
+fn autoSaveSession(_: ?*anyopaque) callconv(.c) c_int {
+    g_pool.saveSession(g_db);
+    return 1; // keep repeating
 }

@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const c = @cImport({
     @cInclude("gtk/gtk.h");
+    @cInclude("glib-unix.h");
     @cInclude("webkit2/webkit2.h");
     @cInclude("sqlite3.h");
 });
