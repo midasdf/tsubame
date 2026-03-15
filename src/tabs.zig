@@ -181,16 +181,19 @@ pub const TabPool = struct {
             std.fmt.bufPrintZ(&label_buf, "Tab {d}", .{id + 1}) catch return error.FmtError;
 
         const tab_button = c.gtk_button_new_with_label(label_text.ptr);
-        c.gtk_widget_set_name(tab_button, id_str.ptr);
         c.gtk_box_pack_start(ch.GTK_BOX(tab_box), tab_button, 1, 1, 0);
 
         // Close button ×
-        const close_btn = c.gtk_button_new_with_label("\xc3\x97"); // ×
-        c.gtk_widget_set_name(close_btn, id_str.ptr);
+        const close_btn = c.gtk_button_new_with_label("x");
         c.gtk_box_pack_start(ch.GTK_BOX(tab_box), close_btn, 0, 0, 0);
 
         c.gtk_box_pack_start(ch.GTK_BOX(self.tab_bar), tab_box, 0, 0, 0);
         c.gtk_widget_show_all(tab_box);
+
+        // Store tab ID on each button via GObject data
+        const id_as_ptr = @as(?*anyopaque, @ptrFromInt(@as(usize, id) + 1)); // +1 to avoid null
+        _ = c.g_object_set_data(@ptrCast(@alignCast(tab_button)), "tab-id", id_as_ptr);
+        _ = c.g_object_set_data(@ptrCast(@alignCast(close_btn)), "tab-id", id_as_ptr);
 
         ch.connectSignal(tab_button, "clicked", &onTabButtonClicked, self);
         ch.connectSignal(close_btn, "clicked", &onTabCloseClicked, self);
@@ -336,10 +339,12 @@ pub const TabPool = struct {
         return count > 0;
     }
 
-    fn findTabById(pool: *TabPool, widget: *c.GtkWidget) ?usize {
-        const name_ptr = c.gtk_widget_get_name(widget);
-        if (name_ptr == null) return null;
-        const id = std.fmt.parseInt(u32, std.mem.span(name_ptr.?), 10) catch return null;
+    fn findTabById(pool: *TabPool, widget: anytype) ?usize {
+        const raw = c.g_object_get_data(@ptrCast(@alignCast(widget)), "tab-id");
+        if (raw == null) return null;
+        const id_plus1 = @intFromPtr(raw.?);
+        if (id_plus1 == 0) return null;
+        const id: u32 = @intCast(id_plus1 - 1);
 
         for (pool.tabs.items, 0..) |tab, i| {
             if (tab.id == id) return i;
