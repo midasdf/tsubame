@@ -76,38 +76,37 @@ const dark_css =
     \\    border-bottom: 1px solid #313244;
     \\}
     \\
-    \\#tab-bar box {
+    \\#tab-bar button {
     \\    background-color: #1e1e2e;
-    \\    border: 1px solid #313244;
-    \\    border-radius: 6px 6px 0 0;
-    \\    margin-right: 2px;
-    \\}
-    \\
-    \\#tab-bar box:disabled {
-    \\    background-color: #11111b;
-    \\    border-color: #181825;
-    \\}
-    \\
-    \\#tab-bar box button {
-    \\    background: transparent;
     \\    color: #a6adc8;
-    \\    border: none;
-    \\    padding: 3px 6px;
+    \\    border: 1px solid #313244;
+    \\    border-radius: 4px;
+    \\    padding: 3px 8px;
+    \\    margin-right: 1px;
     \\    min-width: 0;
     \\    min-height: 0;
     \\}
     \\
-    \\#tab-bar box button:hover {
+    \\#tab-bar button:hover {
+    \\    background-color: #313244;
     \\    color: #cdd6f4;
     \\}
     \\
-    \\#tab-bar box button:last-child {
+    \\#tab-bar button:disabled {
+    \\    background-color: #11111b;
     \\    color: #585b70;
-    \\    padding: 3px 4px;
+    \\    border-color: #181825;
     \\}
     \\
-    \\#tab-bar box button:last-child:hover {
+    \\/* Close buttons (named .close-btn via CSS class) */
+    \\.close-btn {
+    \\    padding: 3px 5px;
+    \\    margin-right: 4px;
+    \\}
+    \\
+    \\.close-btn:hover {
     \\    color: #f38ba8;
+    \\    background-color: #45475a;
     \\}
     \\
     \\/* New tab button */

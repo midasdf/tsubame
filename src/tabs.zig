@@ -15,8 +15,8 @@ pub const TabState = struct {
     is_private: bool,
     webview: ?*c.GtkWidget,
     last_accessed: i64,
-    tab_box: ?*c.GtkWidget,
     tab_button: ?*c.GtkWidget,
+    close_button: ?*c.GtkWidget,
 
     pub fn deinit(self: *TabState, allocator: std.mem.Allocator) void {
         if (self.url) |u| allocator.free(u);
@@ -105,9 +105,8 @@ pub const TabPool = struct {
         tab.webview = null;
         tab.is_active = false;
 
-        if (tab.tab_box) |box| {
-            c.gtk_widget_set_sensitive(box, 0);
-        }
+        if (tab.tab_button) |btn| c.gtk_widget_set_sensitive(btn, 0);
+        if (tab.close_button) |btn| c.gtk_widget_set_sensitive(btn, 0);
     }
 
     fn restoreTab(self: *TabPool, idx: usize) void {
@@ -133,9 +132,8 @@ pub const TabPool = struct {
             browser.loadUri(webview, url.ptr);
         }
 
-        if (tab.tab_box) |box| {
-            c.gtk_widget_set_sensitive(box, 1);
-        }
+        if (tab.tab_button) |btn| c.gtk_widget_set_sensitive(btn, 1);
+        if (tab.close_button) |btn| c.gtk_widget_set_sensitive(btn, 1);
 
         if (self.on_new_webview) |cb| cb(webview);
     }
@@ -165,15 +163,7 @@ pub const TabPool = struct {
         c.gtk_stack_add_named(ch.GTK_STACK(self.web_stack), webview, name.ptr);
         c.gtk_widget_show(webview);
 
-        // Create tab widget: [label_button] [close_button] in a box
-        var id_buf: [32]u8 = undefined;
-        const id_str = std.fmt.bufPrintZ(&id_buf, "{d}", .{id}) catch return error.FmtError;
-
-        // Container box for the tab
-        const tab_box = c.gtk_box_new(c.GTK_ORIENTATION_HORIZONTAL, 0);
-        c.gtk_widget_set_name(tab_box, id_str.ptr);
-
-        // Label button (clickable area to switch tab)
+        // Tab label button — placed directly in tab_bar
         var label_buf: [64]u8 = undefined;
         const label_text = if (is_private)
             std.fmt.bufPrintZ(&label_buf, "\xF0\x9F\x94\x92 Tab {d}", .{id + 1}) catch return error.FmtError
@@ -181,19 +171,20 @@ pub const TabPool = struct {
             std.fmt.bufPrintZ(&label_buf, "Tab {d}", .{id + 1}) catch return error.FmtError;
 
         const tab_button = c.gtk_button_new_with_label(label_text.ptr);
-        c.gtk_box_pack_start(ch.GTK_BOX(tab_box), tab_button, 1, 1, 0);
+        c.gtk_box_pack_start(ch.GTK_BOX(self.tab_bar), tab_button, 0, 0, 0);
+        c.gtk_widget_show(tab_button);
 
-        // Close button ×
+        // Close button — placed directly in tab_bar, right next to tab button
         const close_btn = c.gtk_button_new_with_label("x");
-        c.gtk_box_pack_start(ch.GTK_BOX(tab_box), close_btn, 0, 0, 0);
+        const close_ctx = c.gtk_widget_get_style_context(close_btn);
+        c.gtk_style_context_add_class(close_ctx, "close-btn");
+        c.gtk_box_pack_start(ch.GTK_BOX(self.tab_bar), close_btn, 0, 0, 0);
+        c.gtk_widget_show(close_btn);
 
-        c.gtk_box_pack_start(ch.GTK_BOX(self.tab_bar), tab_box, 0, 0, 0);
-        c.gtk_widget_show_all(tab_box);
-
-        // Store tab ID on each button via GObject data
-        const id_as_ptr = @as(?*anyopaque, @ptrFromInt(@as(usize, id) + 1)); // +1 to avoid null
-        _ = c.g_object_set_data(@ptrCast(@alignCast(tab_button)), "tab-id", id_as_ptr);
-        _ = c.g_object_set_data(@ptrCast(@alignCast(close_btn)), "tab-id", id_as_ptr);
+        // Store tab ID on buttons via GObject data
+        const id_as_ptr = @as(?*anyopaque, @ptrFromInt(@as(usize, id) + 1));
+        c.g_object_set_data(@ptrCast(@alignCast(tab_button)), "tab-id", id_as_ptr);
+        c.g_object_set_data(@ptrCast(@alignCast(close_btn)), "tab-id", id_as_ptr);
 
         ch.connectSignal(tab_button, "clicked", &onTabButtonClicked, self);
         ch.connectSignal(close_btn, "clicked", &onTabCloseClicked, self);
@@ -210,8 +201,8 @@ pub const TabPool = struct {
             .is_private = is_private,
             .webview = webview,
             .last_accessed = now,
-            .tab_box = tab_box,
             .tab_button = tab_button,
+            .close_button = close_btn,
         };
 
         try self.tabs.append(self.allocator, tab);
@@ -255,8 +246,11 @@ pub const TabPool = struct {
             c.gtk_container_remove(ch.GTK_CONTAINER(self.web_stack), tab.webview.?);
         }
 
-        if (tab.tab_box) |box| {
-            c.gtk_container_remove(ch.GTK_CONTAINER(self.tab_bar), box);
+        if (tab.tab_button) |btn| {
+            c.gtk_container_remove(ch.GTK_CONTAINER(self.tab_bar), btn);
+        }
+        if (tab.close_button) |btn| {
+            c.gtk_container_remove(ch.GTK_CONTAINER(self.tab_bar), btn);
         }
 
         tab.deinit(self.allocator);
