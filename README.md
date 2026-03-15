@@ -4,13 +4,19 @@ A lightweight WebKitGTK browser written in Zig. Designed to run comfortably on 5
 
 ## Features
 
-- **Tab pool with LRU eviction** — bounds memory by limiting active WebViews (default: 3)
+- **Tab pool with LRU eviction** — bounds memory by limiting active WebViews (default: 3, configurable)
 - **Bookmarks** — toggle with Ctrl+D or ☆ button, view at `tsubame://bookmarks`
 - **History** — auto-recorded, view at `tsubame://history` or Ctrl+H
 - **In-page search** — Ctrl+F with next/prev navigation
 - **Download manager** — notification bar with auto-hide
 - **Session persistence** — auto-saves every 30s, restores on restart
 - **Cookie management** — persistent, no third-party cookies
+- **Ad blocking** — built-in WebKit content filter rules (togglable)
+- **Private browsing** — Ctrl+Shift+N opens ephemeral tab (no cookies/history)
+- **User scripts** — drop `.js` files in `~/.local/share/tsubame/scripts/`
+- **Split view** — Ctrl+\ splits the window horizontally
+- **Dark theme** — Catppuccin Mocha-inspired dark UI by default
+- **Config file** — `~/.local/share/tsubame/config` (key=value format)
 - **Custom URI scheme** — `tsubame://` for internal pages
 
 ## Keyboard Shortcuts
@@ -19,6 +25,7 @@ A lightweight WebKitGTK browser written in Zig. Designed to run comfortably on 5
 |-----|--------|
 | Ctrl+T | New tab |
 | Ctrl+W | Close tab |
+| Ctrl+Shift+N | New private tab |
 | Ctrl+Tab | Next tab |
 | Ctrl+Shift+Tab | Previous tab |
 | Ctrl+1-9 | Switch to tab N |
@@ -26,10 +33,30 @@ A lightweight WebKitGTK browser written in Zig. Designed to run comfortably on 5
 | Ctrl+F | Find in page |
 | Ctrl+D | Toggle bookmark |
 | Ctrl+H | History |
+| Ctrl+\ | Toggle split view |
 | Ctrl+R / F5 | Reload |
 | Ctrl+Q | Quit |
 | Alt+Left/Right | Back/Forward |
 | Escape | Close find bar / Stop loading |
+
+## Configuration
+
+Create `~/.local/share/tsubame/config`:
+
+```ini
+# Max active (non-suspended) tabs
+max_active_tabs = 3
+
+# Homepage
+homepage = https://duckduckgo.com
+
+# Ad blocking (true/false)
+adblock_enabled = true
+```
+
+## User Scripts
+
+Drop any `.js` file into `~/.local/share/tsubame/scripts/` and it will be injected into all pages at document-end (Greasemonkey-style).
 
 ## Build
 
@@ -39,10 +66,7 @@ Requires: Zig 0.15+, GTK3, WebKitGTK 4.1, SQLite3
 # Arch Linux
 sudo pacman -S webkit2gtk-4.1 gtk3 sqlite
 
-# Build
-zig build
-
-# Run
+# Build & run
 zig build run
 
 # Release build (50KB binary)
@@ -63,6 +87,9 @@ zig build -Doptimize=ReleaseSmall
 Stored in `~/.local/share/tsubame/` (XDG compliant):
 - `tsubame.db` — history, bookmarks, downloads, sessions, settings
 - `cookies.sqlite` — WebKit cookie storage
+- `scripts/` — user scripts (*.js)
+- `content-filters/` — compiled ad block rules
+- `config` — settings file
 
 ## Architecture
 
@@ -72,15 +99,19 @@ src/
 ├── c_helpers.zig     # @cImport + GTK/WebKit type cast helpers
 ├── browser.zig       # WebView creation, navigation, cookies
 ├── tabs.zig          # Tab pool with LRU eviction
-├── ui.zig            # GTK widget tree construction
+├── ui.zig            # GTK widget tree + dark theme CSS
 ├── storage.zig       # SQLite operations
+├── config.zig        # Config file parser
 ├── history.zig       # History CRUD + tsubame://history
 ├── bookmarks.zig     # Bookmark CRUD + tsubame://bookmarks
 ├── search.zig        # In-page find
-└── downloads.zig     # Download manager
+├── downloads.zig     # Download manager
+├── adblock.zig       # WebKit content filter ad blocking
+├── private.zig       # Ephemeral WebView for private browsing
+└── userscript.zig    # User script loader
 ```
 
-1,336 lines of Zig. No external Zig dependencies.
+1,927 lines of Zig. 14 modules. No external Zig dependencies.
 
 ## License
 
