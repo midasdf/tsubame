@@ -253,6 +253,10 @@ fn onKeyPress(_: *c.GtkWidget, event_ptr: ?*anyopaque, _: ?*anyopaque) callconv(
                 if (g_pool.currentWebView()) |wv| browser.loadUri(wv, "tsubame://history");
                 return 1;
             },
+            c.GDK_KEY_backslash => {
+                toggleSplitView();
+                return 1;
+            },
             c.GDK_KEY_1...c.GDK_KEY_9 => {
                 const n = event.keyval - c.GDK_KEY_1;
                 if (n < g_pool.tabs.items.len) g_pool.switchTo(n);
@@ -293,6 +297,71 @@ fn onKeyPress(_: *c.GtkWidget, event_ptr: ?*anyopaque, _: ?*anyopaque) callconv(
     }
 
     return 0;
+}
+
+fn toggleSplitView() void {
+    if (g_ui.is_split) {
+        // Close split view
+        if (g_ui.split_paned) |paned| {
+            // Remove the split webview
+            if (g_ui.split_webview) |swv| {
+                c.gtk_container_remove(ch.GTK_CONTAINER(paned), swv);
+                g_ui.split_webview = null;
+            }
+
+            // Reparent the web_stack back into vbox
+            c.gtk_container_remove(ch.GTK_CONTAINER(paned), g_ui.web_stack);
+            // Remove paned from vbox
+            c.gtk_container_remove(ch.GTK_CONTAINER(g_ui.vbox), paned);
+            // Re-add web_stack in the correct position (after tab_bar)
+            c.gtk_box_pack_start(ch.GTK_BOX(g_ui.vbox), g_ui.web_stack, 1, 1, 0);
+            // Reorder: toolbar=0, tab_bar=1, web_stack=2
+            c.gtk_box_reorder_child(ch.GTK_BOX(g_ui.vbox), g_ui.web_stack, 2);
+            c.gtk_widget_show(g_ui.web_stack);
+
+            g_ui.split_paned = null;
+        }
+        g_ui.is_split = false;
+    } else {
+        // Create split view
+        const paned = c.gtk_paned_new(c.GTK_ORIENTATION_HORIZONTAL);
+
+        // Remove web_stack from vbox
+        // Ref it first so it doesn't get destroyed
+        _ = c.g_object_ref(@ptrCast(@alignCast(g_ui.web_stack)));
+        c.gtk_container_remove(ch.GTK_CONTAINER(g_ui.vbox), g_ui.web_stack);
+
+        // Add paned to vbox in place of web_stack
+        c.gtk_box_pack_start(ch.GTK_BOX(g_ui.vbox), paned, 1, 1, 0);
+        c.gtk_box_reorder_child(ch.GTK_BOX(g_ui.vbox), paned, 2);
+
+        // Left: existing web_stack
+        c.gtk_paned_pack1(@ptrCast(@alignCast(paned)), g_ui.web_stack, 1, 0);
+        _ = c.g_object_unref(@ptrCast(@alignCast(g_ui.web_stack)));
+
+        // Right: new WebView with current URL
+        const split_wv = browser.createWebView();
+        connectWebViewSignals(split_wv);
+        c.gtk_paned_pack2(@ptrCast(@alignCast(paned)), split_wv, 1, 0);
+
+        // Load same URL as current tab
+        if (g_pool.currentTab()) |tab| {
+            if (tab.url) |url| {
+                browser.loadUri(split_wv, url.ptr);
+            }
+        } else {
+            browser.loadUri(split_wv, DEFAULT_URL);
+        }
+
+        // Set divider position to middle
+        c.gtk_paned_set_position(@ptrCast(@alignCast(paned)), 512);
+
+        c.gtk_widget_show_all(paned);
+
+        g_ui.split_paned = paned;
+        g_ui.split_webview = split_wv;
+        g_ui.is_split = true;
+    }
 }
 
 fn onDeleteEvent(_: *c.GtkWidget, _: ?*anyopaque, _: ?*anyopaque) callconv(.c) c_int {

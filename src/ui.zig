@@ -4,9 +4,13 @@ const c = ch.c;
 
 pub const UiState = struct {
     window: *c.GtkWidget,
+    vbox: *c.GtkWidget,
     url_entry: *c.GtkWidget,
     tab_bar: *c.GtkWidget,
     web_stack: *c.GtkWidget,
+    split_paned: ?*c.GtkWidget,
+    split_webview: ?*c.GtkWidget,
+    is_split: bool,
     find_bar: *c.GtkWidget,
     find_entry: *c.GtkWidget,
     find_prev_btn: *c.GtkWidget,
@@ -259,9 +263,13 @@ pub fn buildUi() UiState {
 
     return UiState{
         .window = window,
+        .vbox = vbox,
         .url_entry = url_entry,
         .tab_bar = tab_bar,
         .web_stack = web_stack,
+        .split_paned = null,
+        .split_webview = null,
+        .is_split = false,
         .find_bar = find_bar,
         .find_entry = find_entry,
         .find_prev_btn = find_prev,
