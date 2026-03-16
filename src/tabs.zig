@@ -41,7 +41,6 @@ pub const TabState = struct {
 pub const TabPool = struct {
     tabs: std.ArrayListUnmanaged(TabState),
     allocator: std.mem.Allocator,
-    next_id: u32,
     current_index: ?usize,
     max_active: u32,
     web_stack: *c.GtkWidget,
@@ -58,7 +57,6 @@ pub const TabPool = struct {
         return TabPool{
             .tabs = .empty,
             .allocator = allocator,
-            .next_id = 0,
             .current_index = null,
             .max_active = max_active,
             .web_stack = web_stack,
@@ -81,6 +79,20 @@ pub const TabPool = struct {
             if (tab.is_active) count += 1;
         }
         return count;
+    }
+
+    fn findFreeId(self: *TabPool) u32 {
+        var id: u32 = 0;
+        while (true) : (id += 1) {
+            var in_use = false;
+            for (self.tabs.items) |tab| {
+                if (tab.id == id) {
+                    in_use = true;
+                    break;
+                }
+            }
+            if (!in_use) return id;
+        }
     }
 
     fn findLruActive(self: *TabPool) ?usize {
@@ -151,8 +163,7 @@ pub const TabPool = struct {
             }
         }
 
-        const id = self.next_id;
-        self.next_id += 1;
+        const id = self.findFreeId();
 
         const webview = if (is_private) private_mod.createPrivateWebView() else browser.createWebView();
 
@@ -171,6 +182,10 @@ pub const TabPool = struct {
             std.fmt.bufPrintZ(&label_buf, "Tab {d}", .{id + 1}) catch return error.FmtError;
 
         const tab_button = c.gtk_button_new_with_label(label_text.ptr);
+        // Limit tab width: ellipsize long titles
+        const btn_label = c.gtk_bin_get_child(ch.GTK_BIN(tab_button));
+        c.gtk_label_set_ellipsize(ch.GTK_LABEL(btn_label), c.PANGO_ELLIPSIZE_END);
+        c.gtk_label_set_max_width_chars(ch.GTK_LABEL(btn_label), 20);
         c.gtk_box_pack_start(ch.GTK_BOX(tab_box), tab_button, 1, 1, 0);
 
         const close_btn = c.gtk_button_new_with_label("x");

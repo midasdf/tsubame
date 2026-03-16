@@ -47,6 +47,10 @@ pub fn GTK_EDITABLE(ptr: anytype) *c.GtkEditable {
     return @ptrCast(@alignCast(ptr));
 }
 
+pub fn GTK_BIN(ptr: anytype) *c.GtkBin {
+    return @ptrCast(@alignCast(ptr));
+}
+
 pub fn WEBKIT_WEB_VIEW(ptr: anytype) *c.WebKitWebView {
     return @ptrCast(@alignCast(ptr));
 }
